@@ -3183,5 +3183,6 @@ a {
 }
 
 #w-node-_9d08026b-2420-f09a-d54e-077b843d6fbf-20e581a6, #w-node-_9d08026b-2420-f09a-d54e-077b843d6fbf-40fac685 {
-  place-self: center;
+  align-self: center;
+  justify-self: stretch;
 }

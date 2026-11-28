@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Translate">
+<meta name="theme-color" content="#121110">
+<title>Live Translate</title>
+<link rel="icon" href="data:,">
+<style>
+/* VOICE: calm, legible, built for a noisy street — huge English, quiet Chinese
+   IDEA: a live caption strip, like a subtitle track running under the world
+   PICTURE: the transcript itself; one big record button
+   COLOUR: warm black, paper white, vermilion accent
+   LAYOUT: top bar, scrolling captions, thumb-zone controls */
+:root{--bg:#121110;--panel:#1c1a18;--line:#2c2926;--ink:#f6f2ec;--mute:#9a938a;--dim:#6b655e;--acc:#ff5a36;--zh:#ffd27a;color-scheme:dark}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;overflow:hidden;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.top{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.title{font-weight:650;font-size:17px;flex:1;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+.dot.on{background:var(--acc);box-shadow:0 0 0 0 rgba(255,90,54,.6);animation:pulse 1.6s infinite}
+.dot.wait{background:var(--zh)}
+@keyframes pulse{70%{box-shadow:0 0 0 9px rgba(255,90,54,0)}100%{box-shadow:0 0 0 0 rgba(255,90,54,0)}}
+@media (prefers-reduced-motion:reduce){.dot.on{animation:none}}
+.status{font-size:13px;color:var(--mute);font-weight:400}
+.title>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.icon{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;flex:none}
+.icon svg{width:22px;height:22px}
+.icon.off{color:var(--dim)}
+#feed{flex:1;overflow-y:auto;padding:14px 16px 24px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.empty{color:var(--mute);max-width:34em;margin:8vh auto 0;text-align:center}
+.empty h1{font-size:30px;line-height:1.1;color:var(--ink);margin:0 0 10px;text-wrap:balance}
+.empty p{margin:0 0 10px}
+.seg{padding:12px 0 14px;border-bottom:1px solid var(--line)}
+.seg .o{color:var(--mute);font-size:15px;margin-bottom:4px}
+.seg .t{font-size:24px;line-height:1.3;font-weight:520}
+.seg.zh .t{color:var(--zh);font-size:26px}
+.nf{color:var(--dim)}
+.seg .acts{display:flex;gap:8px;margin-top:8px}
+.chip{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:14px}
+.chip.acc{border-color:var(--acc);color:var(--acc)}
+.bar{border-top:1px solid var(--line);background:var(--bg);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px}
+.seg-ctl{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;flex:1;max-width:260px}
+.seg-ctl button{flex:1;min-height:40px;border:0;background:none;border-radius:9px;font-size:14px;color:var(--mute)}
+.seg-ctl button[aria-pressed=true]{background:var(--ink);color:var(--bg);font-weight:600}
+#go{margin-left:auto;min-width:132px;height:56px;border-radius:28px;border:0;background:var(--acc);color:#fff;font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;gap:8px}
+#go.stop{background:var(--ink);color:var(--bg)}
+#go svg{width:20px;height:20px}
+.err{margin:10px 16px 0;padding:10px 12px;border-radius:10px;background:#3a1712;color:#ffb4a3;font-size:14px;display:none}
+.err.show{display:block}
+/* sheets */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:10}
+.sheet.show{display:block}
+.card{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow-y:auto;background:var(--panel);border-radius:20px 20px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.card h2{font-size:22px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:14px;color:var(--mute);margin-bottom:6px}
+.field input[type=text],.field input[type=password],.field select{width:100%;min-height:46px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:16px}
+.field .hint{font-size:13px;color:var(--dim);margin-top:6px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px}
+.row input[type=checkbox]{width:24px;height:24px;accent-color:var(--acc)}
+.row input[type=range]{flex:1;accent-color:var(--acc)}
+.btn{min-height:46px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:var(--bg);font-weight:600}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+a{color:var(--acc)}
+/* show-to-person overlay */
+#show{position:fixed;inset:0;background:#fffaf0;color:#14110f;z-index:20;display:none;flex-direction:column;padding:calc(20px + env(safe-area-inset-top)) 22px calc(20px + env(safe-area-inset-bottom))}
+#show.show{display:flex}
+#showTxt{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;font-size:clamp(34px,9vw,64px);line-height:1.3;font-weight:600;overflow-y:auto;font-family:"PingFang SC",-apple-system,sans-serif}
+#showSub{text-align:center;color:#6b655e;font-size:16px;margin-bottom:16px}
+#show .btns{justify-content:center}
+#show .btn{background:#14110f;color:#fffaf0;border:0;min-width:120px}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="title"><span class="dot" id="dot"></span><span>Live Translate <span class="status" id="status">· ready</span></span></div>
+  <button class="icon" id="spk" aria-label="Read English aloud" title="Read English aloud"></button>
+  <button class="icon" id="cfg" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</div>
+<div class="err" id="err"></div>
+<div id="feed">
+  <div class="empty" id="empty">
+    <h1>Chinese in the air, English in your ears.</h1>
+    <p>Tap <b>Start</b>, then hold your phone toward whoever's speaking. Each finished sentence gets read into your AirPods.</p>
+    <p><b>Two-way</b> also turns your English into Chinese you can show them. <b>Listen</b> only translates Chinese into English.</p>
+    <p id="needKey" style="display:none;color:var(--zh)">First, add your Soniox API key in Settings.</p>
+  </div>
+</div>
+<div class="bar">
+  <div class="seg-ctl" role="group" aria-label="Mode">
+    <button id="mTwo" aria-pressed="true">Two-way</button>
+    <button id="mOne" aria-pressed="false">Listen</button>
+  </div>
+  <button id="go"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5A3.5 3.5 0 0 0 12 15zm6-3.5a.9.9 0 0 0-1.8 0 4.2 4.2 0 0 1-8.4 0 .9.9 0 0 0-1.8 0 6 6 0 0 0 5.1 5.9V20H9a.9.9 0 0 0 0 1.8h6a.9.9 0 0 0 0-1.8h-2.1v-2.6a6 6 0 0 0 5.1-5.9z"/></svg><span>Start</span></button>
+</div>
+
+<div class="sheet" id="sheet"><div class="card" role="dialog" aria-label="Settings">
+  <h2>Settings <button class="btn" id="close">Done</button></h2>
+  <div class="field">
+    <label for="key">Soniox API key</label>
+    <input type="password" id="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste key from console.soniox.com">
+    <div class="hint">Stored only on this device. Get one at <a href="https://console.soniox.com" target="_blank" rel="noopener">console.soniox.com</a>.</div>
+  </div>
+  <div class="field">
+    <label for="mic">Microphone</label>
+    <select id="mic"><option value="">Default</option></select>
+    <div class="hint">Pick "iPhone Microphone" if it's listed: it hears other people much better than the AirPods mic. Tap Start once to unlock this list.</div>
+  </div>
+  <div class="field">
+    <label for="voice">English voice</label>
+    <select id="voice"></select>
+    <div class="hint">For better voices, download an Enhanced or Premium one in iOS Settings → Accessibility → Spoken Content → Voices → English.</div>
+  </div>
+  <div class="field">
+    <div class="row"><label for="rate" style="margin:0">Speed</label><input type="range" id="rate" min="0.8" max="1.6" step="0.05"><span id="rateV" style="width:3em;text-align:right"></span></div>
+  </div>
+  <div class="field">
+    <div class="row"><label for="zhSpk" style="margin:0;color:var(--ink)">Also read Chinese replies aloud</label><input type="checkbox" id="zhSpk"></div>
+    <div class="hint">Off by default because the audio plays in your AirPods. Use the "Show" button on a reply to show the screen instead.</div>
+  </div>
+  <div class="field">
+    <div class="row"><label for="cut" style="margin:0;color:var(--ink)">Skip ahead when behind</label><input type="checkbox" id="cut"></div>
+    <div class="hint">If several sentences pile up, drop the oldest so the voice stays near real time.</div>
+  </div>
+  <div class="btns">
+    <button class="btn" id="test">Test voice</button>
+    <button class="btn" id="copy">Copy transcript</button>
+    <button class="btn" id="clear">Clear</button>
+  </div>
+</div></div>
+
+<div id="show" role="dialog" aria-label="Show to the other person">
+  <div id="showSub">Please read · 请看</div>
+  <div id="showTxt"></div>
+  <div class="btns"><button class="btn" id="showSay">朗读 Speak</button><button class="btn" id="showX">Close</button></div>
+</div>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const WS_URL = 'wss://stt-rt.soniox.com/transcribe-websocket';
+const MODEL = 'stt-rt-v6';
+const CJK = /[㐀-鿿豈-﫿]/;
+const END_PUNCT = /[.!?。！？…]["'”’)\]]*\s*$/;
+
+/* ---------- settings ---------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('lt_'+k); return v === null ? d : JSON.parse(v) }catch(e){ return d } },
+  set(k, v){ try{ localStorage.setItem('lt_'+k, JSON.stringify(v)) }catch(e){} }
+};
+const S = {
+  key: store.get('key',''), mic: store.get('mic',''), voice: store.get('voice',''),
+  rate: store.get('rate',1.05), zhSpk: store.get('zhSpk',false), cut: store.get('cut',true),
+  speak: store.get('speak',true), mode: store.get('mode','two')
+};
+const save = k => store.set(k, S[k]);
+
+/* ---------- state ---------- */
+let running = false, ws = null, ctx = null, stream = null, node = null, src = null, wakeLock = null;
+let reconnectTimer = null, idleTimer = null, gotFinished = null;
+let segs = [];            // {orig, trans, tLang, spokenTo, done}
+let nfOrig = '', nfTrans = '';
+let renderQueued = false, stick = true;
+
+/* ---------- UI helpers ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function setStatus(txt, state){ $('status').textContent = '· ' + txt; $('dot').className = 'dot' + (state ? ' ' + state : ''); }
+function showErr(msg){ const e = $('err'); e.textContent = msg; e.classList.toggle('show', !!msg); }
+function speakerIcon(){
+  $('spk').innerHTML = S.speak
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9a4.2 4.2 0 0 1 0 6M18.6 6.5a7.8 7.8 0 0 1 0 11"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5"/></svg>';
+  $('spk').classList.toggle('off', !S.speak);
+  $('spk').setAttribute('aria-pressed', String(S.speak));
+}
+function modeUI(){ $('mTwo').setAttribute('aria-pressed', String(S.mode==='two')); $('mOne').setAttribute('aria-pressed', String(S.mode==='one')); }
+function goUI(){
+  const b = $('go'); b.classList.toggle('stop', running);
+  b.querySelector('span').textContent = running ? 'Stop' : 'Start';
+  const nk = emptyEl.querySelector('#needKey'); if (nk) nk.style.display = S.key ? 'none' : 'block';
+}
+
+/* ---------- rendering ---------- */
+const feed = $('feed');
+const emptyEl = $('empty');
+feed.addEventListener('scroll', () => { stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80; });
+function queueRender(){ if (!renderQueued){ renderQueued = true; requestAnimationFrame(render); } }
+function render(){
+  renderQueued = false;
+  if (!segs.length && !nfOrig && !nfTrans){ feed.innerHTML = ''; feed.appendChild(emptyEl); return; }
+  const last = segs.length - 1;
+  feed.innerHTML = segs.map((s, i) => {
+    const isLast = i === last;
+    const o = esc(s.orig.trim()) + (isLast && nfOrig ? '<span class="nf">' + esc(nfOrig) + '</span>' : '');
+    const t = esc(s.trans.trim()) + (isLast && nfTrans ? '<span class="nf">' + esc(nfTrans) + '</span>' : '');
+    const zh = s.tLang === 'zh';
+    const acts = zh && s.trans.trim() ? '<div class="acts"><button class="chip acc" data-show="'+i+'">Show</button><button class="chip" data-say="'+i+'">Speak</button></div>'
+               : (s.trans.trim() ? '<div class="acts" style="display:none"></div>' : '');
+    return '<div class="seg' + (zh ? ' zh' : '') + '">' + (o ? '<div class="o">' + o + '</div>' : '') + (t ? '<div class="t">' + t + '</div>' : '') + acts + '</div>';
+  }).join('');
+  if (stick) feed.scrollTop = feed.scrollHeight;
+}
+feed.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.show !== undefined) openShow(+b.dataset.show);
+  if (b.dataset.say !== undefined){ const s = segs[+b.dataset.say]; if (s) tts.say(s.trans.trim(), 'zh', true); }
+});
+
+/* ---------- text-to-speech ---------- */
+const tts = (() => {
+  const q = []; let busy = false, watchdog = null, voices = [];
+  const synth = window.speechSynthesis;
+  function load(){ voices = synth ? synth.getVoices() : []; setTimeout(fillVoices, 0); }
+  if (synth){ load(); synth.onvoiceschanged = load; }
+  function score(v){ let s = 0; if (/en[-_]US/i.test(v.lang)) s += 3; else if (/^en/i.test(v.lang)) s += 2;
+    if (/premium/i.test(v.name)) s += 6; if (/enhanced/i.test(v.name)) s += 4; if (/siri/i.test(v.name)) s += 3;
+    if (/samantha|ava|zoe|evan|nathan/i.test(v.name)) s += 1; return s; }
+  function pick(lang){
+    if (lang === 'zh') return voices.find(v => /zh[-_]CN/i.test(v.lang)) || voices.find(v => /^zh/i.test(v.lang)) || null;
+    return voices.find(v => v.voiceURI === S.voice) || voices.filter(v => /^en/i.test(v.lang)).sort((a,b) => score(b)-score(a))[0] || null;
+  }
+  function next(){
+    if (busy || !q.length || !synth) return;
+    const item = q.shift(); busy = true;
+    const u = new SpeechSynthesisUtterance(item.text);
+    u.lang = item.lang === 'zh' ? 'zh-CN' : 'en-US';
+    const v = pick(item.lang); if (v){ try{ u.voice = v; u.lang = v.lang; }catch(e){} }
+    u.rate = item.lang === 'zh' ? 0.95 : S.rate;
+    const done = () => { clearTimeout(watchdog); busy = false; next(); };
+    u.onend = done; u.onerror = done;
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => { try{ synth.cancel() }catch(e){} done(); }, 4000 + item.text.length * 140 / S.rate);
+    synth.speak(u);
+  }
+  return {
+    say(text, lang, now){
+      text = (text || '').trim(); if (!text || !synth) return;
+      if (now){ q.length = 0; try{ synth.cancel() }catch(e){} busy = false; }
+      q.push({text, lang});
+      if (S.cut) while (q.length > 2) q.shift();
+      next();
+    },
+    unlock(){ if (!synth) return; try{ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); }catch(e){} },
+    stop(){ q.length = 0; busy = false; try{ synth && synth.cancel() }catch(e){} },
+    voices: () => voices
+  };
+})();
+function fillVoices(){
+  const sel = $('voice'); const en = tts.voices().filter(v => /^en/i.test(v.lang));
+  if (!en.length){ sel.innerHTML = '<option value="">System default</option>'; return; }
+  sel.innerHTML = '<option value="">Best available</option>' + en.map(v => '<option value="' + esc(v.voiceURI) + '"' + (v.voiceURI === S.voice ? ' selected' : '') + '>' + esc(v.name + ' (' + v.lang + ')') + '</option>').join('');
+}
+
+/* speak finished pieces of a segment's translation */
+function speakFrom(s, force){
+  if (!S.speak && s.tLang !== 'zh') return;
+  if (s.tLang === 'zh' && !S.zhSpk) return;
+  const txt = s.trans; let end = -1;
+  if (force) end = txt.length;
+  else { const re = /[.!?。！？…]["'”’)\]]*/g; let m; while ((m = re.exec(txt))) if (m.index + m[0].length > s.spokenTo) end = m.index + m[0].length; }
+  if (end > s.spokenTo){ const piece = txt.slice(s.spokenTo, end).trim(); s.spokenTo = end; if (/[\p{L}\p{N}]/u.test(piece)) tts.say(piece, s.tLang); }
+}
+
+/* ---------- token handling ---------- */
+function cur(){ if (!segs.length) segs.push({orig:'', trans:'', tLang:null, spokenTo:0, done:false}); return segs[segs.length-1]; }
+function closeSeg(){ const s = segs[segs.length-1]; if (s && !s.done){ speakFrom(s, true); s.done = true; } }
+function newSeg(){ closeSeg(); segs.push({orig:'', trans:'', tLang:null, spokenTo:0, done:false}); if (segs.length > 200) segs.splice(0, segs.length - 200); }
+function langOf(t, fallbackText){ if (t.language) return /^zh/i.test(t.language) ? 'zh' : (/^en/i.test(t.language) ? 'en' : t.language); return CJK.test(fallbackText) ? 'zh' : 'en'; }
+
+function onTokens(tokens){
+  nfOrig = ''; nfTrans = '';
+  let sawTrans = false;
+  for (const t of tokens){
+    const txt = t.text || '';
+    if (txt === '<end>'){ if (t.is_final) markEnd(); continue; }
+    if (txt === '<fin>' || !txt) continue;
+    const isTrans = t.translation_status === 'translation';
+    if (!t.is_final){ if (isTrans) nfTrans += txt; else nfOrig += txt; continue; }
+    let s = cur();
+    if (isTrans){
+      if (!s.tLang) s.tLang = langOf(t, txt);
+      s.trans += txt; sawTrans = true;
+      speakFrom(s, false);
+    } else {
+      if (s.trans.trim() || s.done) { newSeg(); s = cur(); }
+      s.orig += txt;
+    }
+  }
+  if ((nfOrig || nfTrans) && !segs.length) cur();
+  if (sawTrans){ clearTimeout(idleTimer); idleTimer = setTimeout(() => { const s = segs[segs.length-1]; if (s && s.trans) speakFrom(s, true); }, 1100); }
+  queueRender();
+}
+let endPending = false;
+function markEnd(){
+  // translation of a just-finished utterance may still be arriving; close once it has
+  const s = segs[segs.length-1]; if (!s) return;
+  if (S.mode === 'one' && !CJK.test(s.orig)) { s.done = true; return; } // own English in listen mode: nothing to translate
+  endPending = true;
+  setTimeout(() => { if (endPending){ endPending = false; const last = segs[segs.length-1]; if (last && last.trans.trim()) closeSeg(); } }, 1500);
+}
+
+/* ---------- audio capture ---------- */
+const WORKLET = `class Tap extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('tap',Tap)`;
+let pend = new Float32Array(0), carry = 0;
+function downsampleAndSend(f32){
+  if (!ws || ws.readyState !== 1 || !ctx) return;
+  const ratio = ctx.sampleRate / 16000;
+  const joined = new Float32Array(pend.length + f32.length); joined.set(pend); joined.set(f32, pend.length);
+  const outLen = Math.floor((joined.length - carry) / ratio);
+  if (outLen < 1600){ pend = joined; return; }   // send ~100 ms at a time
+  const out = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++){
+    const a = Math.floor(carry + i * ratio), b = Math.min(joined.length, Math.floor(carry + (i + 1) * ratio));
+    let sum = 0; for (let j = a; j < b; j++) sum += joined[j];
+    const v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));
+    out[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const used = carry + outLen * ratio; const usedInt = Math.floor(used);
+  carry = used - usedInt; pend = joined.slice(usedInt);
+  try{ ws.send(out.buffer); }catch(e){}
+}
+async function startAudio(){
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') await ctx.resume();
+  const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+  if (S.mic) constraints.audio.deviceId = { exact: S.mic };
+  try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
+  catch(e){ if (S.mic && e.name === 'OverconstrainedError'){ S.mic = ''; save('mic'); delete constraints.audio.deviceId; stream = await navigator.mediaDevices.getUserMedia(constraints); } else throw e; }
+  listMics();
+  src = ctx.createMediaStreamSource(stream);
+  try {
+    const url = URL.createObjectURL(new Blob([WORKLET], {type:'application/javascript'}));
+    await ctx.audioWorklet.addModule(url);
+    node = new AudioWorkletNode(ctx, 'tap');
+    node.port.onmessage = e => downsampleAndSend(e.data);
+  } catch(e) {           // older fallback
+    node = ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = ev => downsampleAndSend(new Float32Array(ev.inputBuffer.getChannelData(0)));
+  }
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+}
+function stopAudio(){
+  try{ node && node.disconnect(); src && src.disconnect(); }catch(e){}
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (ctx) ctx.close().catch(()=>{});
+  ctx = stream = node = src = null; pend = new Float32Array(0); carry = 0;
+}
+async function listMics(){
+  try{
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    const sel = $('mic');
+    sel.innerHTML = '<option value="">Default</option>' + devs.map((d,i) => '<option value="' + esc(d.deviceId) + '"' + (d.deviceId === S.mic ? ' selected' : '') + '>' + esc(d.label || ('Microphone ' + (i+1))) + '</option>').join('');
+    const active = stream && stream.getAudioTracks()[0];
+    if (active && running) setStatus('listening · ' + (active.label || 'mic'), 'on');
+  }catch(e){}
+}
+
+/* ---------- Soniox connection ---------- */
+function config(){
+  const c = { model: MODEL, audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1,
+    language_hints: ['zh','en'], enable_language_identification: true, enable_endpoint_detection: true };
+  c.translation = S.mode === 'two' ? { type: 'two_way', language_a: 'zh', language_b: 'en' } : { type: 'one_way', target_language: 'en' };
+  return c;
+}
+function connect(){
+  clearTimeout(reconnectTimer);
+  setStatus('connecting…', 'wait');
+  let sock;
+  try { sock = new WebSocket(WS_URL, ['soniox-api-key', S.key]); }
+  catch(e){ showErr('Could not open connection: ' + e.message + '. Check the API key has no spaces.'); stop(); return; }
+  ws = sock;
+  sock.onopen = () => {
+    sock.send(JSON.stringify(config()));
+    showErr(''); const tr = stream && stream.getAudioTracks()[0];
+    setStatus('listening' + (tr && tr.label ? ' · ' + tr.label : ''), 'on');
+  };
+  sock.onmessage = e => {
+    let m; try{ m = JSON.parse(e.data) }catch(_){ return }
+    if (m.error_code || m.error_message){
+      const code = m.error_code;
+      showErr('Soniox: ' + (m.error_message || 'error') + (code ? ' (' + code + ')' : '') + (code === 401 ? '. Check your API key in Settings.' : code === 402 ? '. Add credit at console.soniox.com.' : ''));
+      if (code === 401 || code === 402 || code === 400) { stop(); }
+      return;
+    }
+    if (m.tokens && m.tokens.length) onTokens(m.tokens);
+    if (m.finished && gotFinished) gotFinished();
+  };
+  sock.onerror = () => {};
+  sock.onclose = ev => {
+    if (ws !== sock) return;
+    ws = null;
+    if (running){
+      setStatus('reconnecting…', 'wait');
+      if (ev.code === 1008 || ev.code === 4001) { showErr('Connection refused. Check your Soniox API key in Settings.'); stop(); return; }
+      reconnectTimer = setTimeout(connect, 900);
+    }
+  };
+}
+
+/* ---------- start / stop ---------- */
+async function start(){
+  if (!S.key){ openSheet(); $('key').focus(); return; }
+  if (!window.WebSocket || !navigator.mediaDevices){ showErr('This browser can’t record audio. Open the page in Safari.'); return; }
+  tts.unlock();
+  running = true; goUI(); showErr('');
+  try { await startAudio(); }
+  catch(e){ running = false; goUI(); setStatus('ready'); stopAudio();
+    showErr(e.name === 'NotAllowedError' ? 'Microphone blocked. Allow it in Settings → Safari → Microphone (or aA menu → Website Settings), then try again.' : 'Mic error: ' + e.message); return; }
+  connect();
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+}
+function stop(){
+  if (!running) return;
+  running = false; goUI(); clearTimeout(reconnectTimer);
+  const sock = ws;
+  stopAudio();
+  if (sock && sock.readyState === 1){
+    try{ sock.send(''); }catch(e){}
+    gotFinished = () => { gotFinished = null; try{ sock.close() }catch(e){} };
+    setTimeout(() => { if (gotFinished) gotFinished(); }, 3000);
+  }
+  ws = null;
+  closeSeg(); queueRender();
+  setStatus('stopped');
+  try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && running){
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(()=>{});
+    if (!ws) connect();
+  }
+});
+
+/* ---------- show-to-person ---------- */
+let showIdx = -1;
+function openShow(i){ const s = segs[i]; if (!s) return; showIdx = i; $('showTxt').textContent = s.trans.trim(); $('show').classList.add('show'); }
+$('showX').onclick = () => $('show').classList.remove('show');
+$('showSay').onclick = () => { const s = segs[showIdx]; if (s) tts.say(s.trans.trim(), 'zh', true); };
+
+/* ---------- settings sheet ---------- */
+function openSheet(){ $('key').value = S.key; $('rate').value = S.rate; $('rateV').textContent = (+S.rate).toFixed(2) + '×';
+  $('zhSpk').checked = S.zhSpk; $('cut').checked = S.cut; fillVoices(); $('sheet').classList.add('show'); }
+function closeSheet(){ $('sheet').classList.remove('show'); goUI(); }
+$('cfg').onclick = openSheet; $('close').onclick = closeSheet;
+$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+$('key').addEventListener('input', e => { S.key = e.target.value.trim(); save('key'); });
+$('mic').addEventListener('change', e => { S.mic = e.target.value; save('mic'); if (running){ stop(); setTimeout(start, 300); } });
+$('voice').addEventListener('change', e => { S.voice = e.target.value; save('voice'); });
+$('rate').addEventListener('input', e => { S.rate = +e.target.value; save('rate'); $('rateV').textContent = S.rate.toFixed(2) + '×'; });
+$('zhSpk').addEventListener('change', e => { S.zhSpk = e.target.checked; save('zhSpk'); });
+$('cut').addEventListener('change', e => { S.cut = e.target.checked; save('cut'); });
+$('test').onclick = () => tts.say('Hi Pedro. This is how your translations will sound.', 'en', true);
+$('clear').onclick = () => { segs = []; nfOrig = nfTrans = ''; queueRender(); closeSheet(); };
+$('copy').onclick = async () => {
+  const txt = segs.map(s => (s.orig.trim() ? s.orig.trim() + '\n' : '') + s.trans.trim()).filter(Boolean).join('\n\n');
+  try{ await navigator.clipboard.writeText(txt); $('copy').textContent = 'Copied'; }catch(e){ $('copy').textContent = 'Copy failed'; }
+  setTimeout(() => $('copy').textContent = 'Copy transcript', 1500);
+};
+
+/* ---------- main controls ---------- */
+$('go').onclick = () => running ? stop() : start();
+$('spk').onclick = () => { S.speak = !S.speak; save('speak'); speakerIcon(); if (!S.speak) tts.stop(); else tts.unlock(); };
+function setMode(m){ if (S.mode === m) return; S.mode = m; save('mode'); modeUI();
+  if (running && ws){ const old = ws; ws = null; try{ old.send(''); setTimeout(() => { try{ old.close() }catch(e){} }, 1500); }catch(e){} closeSeg(); connect(); } }
+$('mTwo').onclick = () => setMode('two'); $('mOne').onclick = () => setMode('one');
+
+speakerIcon(); modeUI(); goUI();
+}
+</script>
+</body>
+</html>

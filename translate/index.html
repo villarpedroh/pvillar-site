@@ -32,7 +32,9 @@ button{cursor:pointer}
 @keyframes pulse{70%{box-shadow:0 0 0 9px rgba(255,90,54,0)}100%{box-shadow:0 0 0 0 rgba(255,90,54,0)}}
 @media (prefers-reduced-motion:reduce){.dot.on{animation:none}}
 .status{font-size:13px;color:var(--mute);font-weight:400}
-.title>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meter{height:4px;background:var(--line);border-radius:2px;margin-top:5px;overflow:hidden;width:100%;max-width:180px}
+.meter i{display:block;height:100%;width:0;background:var(--acc);transition:width .08s linear}
+.title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 .icon{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;flex:none}
 .icon svg{width:22px;height:22px}
 .icon.off{color:var(--dim)}
@@ -84,7 +86,7 @@ a{color:var(--acc)}
 </head>
 <body>
 <div class="top">
-  <div class="title"><span class="dot" id="dot"></span><span>Live Translate <span class="status" id="status">· ready</span></span></div>
+  <div class="title"><span class="dot" id="dot"></span><div style="flex:1;min-width:0"><span>Live Translate <span class="status" id="status">· ready</span></span><div class="meter" aria-hidden="true"><i id="lvl"></i></div></div></div>
   <button class="icon" id="spk" aria-label="Read English aloud" title="Read English aloud"></button>
   <button class="icon" id="cfg" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </div>
@@ -130,6 +132,10 @@ a{color:var(--acc)}
     <div class="hint">Off by default because the audio plays in your AirPods. Use the "Show" button on a reply to show the screen instead.</div>
   </div>
   <div class="field">
+    <div class="row"><label for="boost" style="margin:0;color:var(--ink)">Boost distant voices</label><input type="checkbox" id="boost"></div>
+    <div class="hint">Turns off the phone's "voice isolation" (which is tuned to your own voice) and amplifies the mic. Leave on unless it picks up too much noise.</div>
+  </div>
+  <div class="field">
     <div class="row"><label for="cut" style="margin:0;color:var(--ink)">Skip ahead when behind</label><input type="checkbox" id="cut"></div>
     <div class="hint">If several sentences pile up, drop the oldest so the voice stays near real time.</div>
   </div>
@@ -161,7 +167,7 @@ const store = {
 };
 const S = {
   key: store.get('key',''), mic: store.get('mic',''), voice: store.get('voice',''),
-  rate: store.get('rate',1.05), zhSpk: store.get('zhSpk',false), cut: store.get('cut',true),
+  rate: store.get('rate',1.05), zhSpk: store.get('zhSpk',false), cut: store.get('cut',true), boost: store.get('boost',true),
   speak: store.get('speak',true), mode: store.get('mode','two')
 };
 const save = k => store.set(k, S[k]);
@@ -313,7 +319,15 @@ function markEnd(){
 /* ---------- audio capture ---------- */
 const WORKLET = `class Tap extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('tap',Tap)`;
 let pend = new Float32Array(0), carry = 0;
+let lvlT = 0;
+function meter(f32){
+  const now = performance.now(); if (now - lvlT < 70) return; lvlT = now;
+  let sum = 0; for (let i = 0; i < f32.length; i++) sum += f32[i]*f32[i];
+  const db = 20 * Math.log10(Math.sqrt(sum / f32.length) + 1e-6);
+  $('lvl').style.width = Math.max(0, Math.min(100, (db + 60) * 1.8)) + '%';
+}
 function downsampleAndSend(f32){
+  meter(f32);
   if (!ws || ws.readyState !== 1 || !ctx) return;
   const ratio = ctx.sampleRate / 16000;
   const joined = new Float32Array(pend.length + f32.length); joined.set(pend); joined.set(f32, pend.length);
@@ -333,7 +347,8 @@ function downsampleAndSend(f32){
 async function startAudio(){
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') await ctx.resume();
-  const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+  const proc = !S.boost;
+  const constraints = { audio: { echoCancellation: proc, noiseSuppression: proc, autoGainControl: proc, channelCount: 1 } };
   if (S.mic) constraints.audio.deviceId = { exact: S.mic };
   try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
   catch(e){ if (S.mic && e.name === 'OverconstrainedError'){ S.mic = ''; save('mic'); delete constraints.audio.deviceId; stream = await navigator.mediaDevices.getUserMedia(constraints); } else throw e; }
@@ -349,13 +364,20 @@ async function startAudio(){
     node.onaudioprocess = ev => downsampleAndSend(new Float32Array(ev.inputBuffer.getChannelData(0)));
   }
   const mute = ctx.createGain(); mute.gain.value = 0;
-  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+  let head = src;
+  if (S.boost){
+    const g = ctx.createGain(); g.gain.value = 4;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 8; comp.attack.value = 0.003; comp.release.value = 0.2;
+    src.connect(g); g.connect(comp); head = comp;
+  }
+  head.connect(node); node.connect(mute); mute.connect(ctx.destination);
 }
 function stopAudio(){
   try{ node && node.disconnect(); src && src.disconnect(); }catch(e){}
   if (stream) stream.getTracks().forEach(t => t.stop());
   if (ctx) ctx.close().catch(()=>{});
   ctx = stream = node = src = null; pend = new Float32Array(0); carry = 0;
+  const l = $('lvl'); if (l) l.style.width = '0';
 }
 async function listMics(){
   try{
@@ -452,7 +474,7 @@ $('showSay').onclick = () => { const s = segs[showIdx]; if (s) tts.say(s.trans.t
 
 /* ---------- settings sheet ---------- */
 function openSheet(){ $('key').value = S.key; $('rate').value = S.rate; $('rateV').textContent = (+S.rate).toFixed(2) + '×';
-  $('zhSpk').checked = S.zhSpk; $('cut').checked = S.cut; fillVoices(); $('sheet').classList.add('show'); }
+  $('zhSpk').checked = S.zhSpk; $('boost').checked = S.boost; $('cut').checked = S.cut; fillVoices(); $('sheet').classList.add('show'); }
 function closeSheet(){ $('sheet').classList.remove('show'); goUI(); }
 $('cfg').onclick = openSheet; $('close').onclick = closeSheet;
 $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
@@ -461,6 +483,7 @@ $('mic').addEventListener('change', e => { S.mic = e.target.value; save('mic'); 
 $('voice').addEventListener('change', e => { S.voice = e.target.value; save('voice'); });
 $('rate').addEventListener('input', e => { S.rate = +e.target.value; save('rate'); $('rateV').textContent = S.rate.toFixed(2) + '×'; });
 $('zhSpk').addEventListener('change', e => { S.zhSpk = e.target.checked; save('zhSpk'); });
+$('boost').addEventListener('change', e => { S.boost = e.target.checked; save('boost'); if (running){ stop(); setTimeout(start, 300); } });
 $('cut').addEventListener('change', e => { S.cut = e.target.checked; save('cut'); });
 $('test').onclick = () => tts.say('Hi Pedro. This is how your translations will sound.', 'en', true);
 $('clear').onclick = () => { segs = []; nfOrig = nfTrans = ''; queueRender(); closeSheet(); };
